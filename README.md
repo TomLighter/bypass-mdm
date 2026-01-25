@@ -171,30 +171,3 @@ mv /Volumes/"Macintosh HD"/System/Library/PreferencePanes/Profiles.prefPane.bak 
 "/Volumes/Macintosh HD/usr/sbin/bless" --mount "/Volumes/Macintosh HD" --bootefi --create-snapshot
 reboot
 ```
-
----
-
-### FAQ
-
-**Q:** Will this remove server-side DEP/MDM records?  
-**A:** No — this is local cleanup only. Server/DEP registration (the organization’s console) is not removed by local script.
-
-**Q:** Will future macOS updates re-enable the UI?  
-**A:** Possibly. Major OS updates can revert changes; re-run sanity checks after updates.
-
-**Q:** Can this harm the system?  
-**A:** The scripts operate on system areas and set immutable flags — they are potentially disruptive if misused. Back up before running. Use Recovery to revert.
-
-**Q:** Is it legal to run these scripts?  
-**A:** If you own the device or have explicit permission, yes — otherwise running them could violate policies, contracts, or law. Check policy + legal constraints before using.
-
----
-
-### Safety & legal
-
-- Only run on devices you own or manage with permission.
-- Keep backups.
-- Test on a spare/disposable Mac if possible.
-- Use this repo for recovery/testing/education only. Do not use on someone else’s corporate device without authorization.
-
----
