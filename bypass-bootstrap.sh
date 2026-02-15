@@ -1,13 +1,13 @@
-#!/usr/bin/env zsh
+#!/bin/bash
 set -euo pipefail
-setopt null_glob
+shopt -s nullglob
 
-log()  { print "[*] $1"; }
-warn() { print -u2 "[!] $1"; }
+log()  { printf '[*] %s\n' "$1"; }
+warn() { printf '[!] %s\n' "$1" >&2; }
 
 # Non-interactive: skip "Run now?" prompt and execute recovery script after SHA verify
 AUTO_YES=false
-for arg in "${@}"; do
+for arg in "$@"; do
   case "$arg" in
     -y|--yes) AUTO_YES=true; break ;;
   esac
@@ -19,18 +19,30 @@ FILE_PATH=${FILE_PATH:-bypass-mdm-cleanup-recovery.sh}
 RAW_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/${FILE_PATH}"
 API_URL="https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${FILE_PATH}"
 
+scan_volumes() {
+  local volume
+  local vol_name
+
+  sys_volumes=()
+  data_volumes=()
+
+  for volume in /Volumes/*; do
+    [[ -d "$volume" ]] || continue
+    vol_name=$(basename "$volume")
+    [[ -d "$volume/System/Library/CoreServices" ]] && sys_volumes+=("$vol_name")
+    # Data volume: has private/var/db (firmlink layout) or var/db, or name is "Data" or ends with " - Data"
+    if [[ -d "$volume/private/var/db" ]] || [[ -d "$volume/var/db" ]]; then
+      data_volumes+=("$vol_name")
+    elif [[ "$vol_name" == "Data" ]] || [[ "$vol_name" == *" - Data" ]]; then
+      data_volumes+=("$vol_name")
+    fi
+  done
+}
+
 log "Searching for macOS system and data volumes under /Volumes..."
-typeset -a sys_volumes
-typeset -a data_volumes
-for volume in /Volumes/*; do
-  [[ -d "$volume/System/Library/CoreServices" ]] && sys_volumes+=("${volume:t}")
-  # Data volume: has private/var/db (firmlink layout) or var/db, or name is "Data" or ends with " - Data"
-  if [[ -d "$volume/private/var/db" ]] || [[ -d "$volume/var/db" ]]; then
-    data_volumes+=("${volume:t}")
-  elif [[ "${volume:t}" == "Data" ]] || [[ "${volume:t}" == *" - Data" ]]; then
-    data_volumes+=("${volume:t}")
-  fi
-done
+sys_volumes=()
+data_volumes=()
+scan_volumes
 
 # Prefer system volume for "which volume to use"; in -y mode never prompt
 SYS_VOL=""
@@ -43,25 +55,19 @@ if (( ${#sys_volumes} == 0 )); then
   done
   # Discover all APFS volume names from diskutil (handles custom names like "My SSD" / "My SSD - Data")
   # Output format: "   Name:                Macintosh HD - Data" or "Name: My SSD (Case-sensitive)"
-  typeset -a apfs_names
-  apfs_names=("${(f)$(diskutil apfs list 2>/dev/null | sed -n 's/^[[:space:]]*Name:[[:space:]]*\(.*\)/\1/p' | sed 's/[[:space:]]*(Case-sensitive).*//' | sed 's/[[:space:]]*(Case-insensitive).*//' | sed 's/[[:space:]]*$//')}")
-  for name in "${apfs_names[@]}"; do
-    [[ -z "$name" ]] && continue
-    case "${(L)name}" in
+  while IFS= read -r name; do
+    local_name=$(printf '%s' "$name" | sed 's/[[:space:]]*$//')
+    [[ -z "$local_name" ]] && continue
+    case "$(printf '%s' "$local_name" | tr '[:upper:]' '[:lower:]')" in
       preboot|recovery|vm|update) continue ;;
-      *) diskutil mount "$name" 2>/dev/null || true ;;
+      *) diskutil mount "$local_name" 2>/dev/null || true ;;
     esac
-  done
-  sys_volumes=()
-  data_volumes=()
-  for volume in /Volumes/*; do
-    [[ -d "$volume/System/Library/CoreServices" ]] && sys_volumes+=("${volume:t}")
-    if [[ -d "$volume/private/var/db" ]] || [[ -d "$volume/var/db" ]]; then
-      data_volumes+=("${volume:t}")
-    elif [[ "${volume:t}" == "Data" ]] || [[ "${volume:t}" == *" - Data" ]]; then
-      data_volumes+=("${volume:t}")
-    fi
-  done
+  done < <(diskutil apfs list 2>/dev/null \
+    | sed -n 's/^[[:space:]]*Name:[[:space:]]*\(.*\)/\1/p' \
+    | sed 's/[[:space:]]*(Case-sensitive).*//' \
+    | sed 's/[[:space:]]*(Case-insensitive).*//')
+
+  scan_volumes
 fi
 if (( ${#sys_volumes} == 0 )); then
   warn "No macOS system volume found under /Volumes."
@@ -89,9 +95,9 @@ else
     log "Multiple system volumes; auto-selected: $SYS_VOL"
   else
     log "Multiple system candidates:"
-    integer idx=1
+    idx=1
     for vol in "${sys_volumes[@]}"; do
-      print "  $idx) $vol"
+      printf '  %s) %s\n' "$idx" "$vol"
       (( idx++ ))
     done
     printf 'Select volume number: '
@@ -138,7 +144,7 @@ cd "$DEST"
 
 log "Downloading script (HTTP errors will fail)..."
 if ! curl -L -f --progress-bar -o "$FILE_PATH" "$RAW_URL"; then
-  print
+  printf '\n'
   warn "Download failed."
   warn "Check that the repository '${GITHUB_USER}/${GITHUB_REPO}' exists,"
   warn "the file '${FILE_PATH}' is committed on the 'main' branch,"
@@ -158,7 +164,8 @@ compute_git_blob_sha() {
   if command -v openssl >/dev/null 2>&1 && command -v xxd >/dev/null 2>&1; then
     printf "blob %s\0" "$size" | cat - "$file" | openssl sha1 -binary | xxd -p -c 256
   elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 1 "$file" | awk '{print $1}'
+    # Keep GitHub API blob SHA comparison valid even without openssl/xxd.
+    printf "blob %s\0" "$size" | cat - "$file" | shasum -a 1 | awk '{print $1}'
   else
     warn "No hashing tool available (openssl/xxd or shasum)."
     return 1
@@ -172,7 +179,7 @@ if [[ -z $LOCAL_SHA ]]; then
 fi
 
 API_JSON=$(curl -s -H "Accept: application/vnd.github.v3+json" "$API_URL")
-REMOTE_SHA=$(print -r -- "$API_JSON" | tr -d '\r\n' | sed -n 's/.*\"sha\"[[:space:]]*:[[:space:]]*\"\([0-9a-f]\{40\}\)\".*/\1/p')
+REMOTE_SHA=$(printf '%s' "$API_JSON" | tr -d '\r\n' | sed -n 's/.*\"sha\"[[:space:]]*:[[:space:]]*\"\([0-9a-f]\{40\}\)\".*/\1/p')
 
 if [[ -z $REMOTE_SHA ]]; then
   warn "Could not retrieve remote SHA from GitHub."
@@ -189,17 +196,27 @@ if [[ $LOCAL_SHA != $REMOTE_SHA ]]; then
   exit 2
 fi
 
-print
+printf '\n'
 log "SHA verified."
+RUNNER=""
+if [[ -x /bin/zsh ]]; then
+  RUNNER=/bin/zsh
+elif [[ -x /bin/bash ]]; then
+  RUNNER=/bin/bash
+else
+  warn "No supported shell found (/bin/zsh or /bin/bash)."
+  exit 1
+fi
+
 if $AUTO_YES; then
-  log "Executing ${DEST}/${FILE_PATH} with Data=$DATA_VOL System=$SYS_VOL ..."
-  /bin/zsh "${DEST}/${FILE_PATH}" "$DATA_VOL" "$SYS_VOL"
+  log "Executing ${DEST}/${FILE_PATH} with Data=$DATA_VOL System=$SYS_VOL using ${RUNNER} ..."
+  "$RUNNER" "${DEST}/${FILE_PATH}" "$DATA_VOL" "$SYS_VOL"
 else
   printf 'Run the recovery script now? (y/N): '
   read -r answer
   if [[ $answer == [yY] ]]; then
-    log "Executing ${DEST}/${FILE_PATH} with Data=$DATA_VOL System=$SYS_VOL ..."
-    /bin/zsh "${DEST}/${FILE_PATH}" "$DATA_VOL" "$SYS_VOL"
+    log "Executing ${DEST}/${FILE_PATH} with Data=$DATA_VOL System=$SYS_VOL using ${RUNNER} ..."
+    "$RUNNER" "${DEST}/${FILE_PATH}" "$DATA_VOL" "$SYS_VOL"
   else
     log "Saved to ${DEST}/${FILE_PATH}. Run manually when ready (e.g. ${DEST}/${FILE_PATH} \"$DATA_VOL\" \"$SYS_VOL\")."
   fi

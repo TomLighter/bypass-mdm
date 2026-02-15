@@ -32,7 +32,7 @@ Do this if you want the cleanup to stick. You’ll boot into Recovery, do three 
 Open **Utilities → Terminal** in Recovery, then paste this and press Enter:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/TomLighter/bypass-mdm/main/bypass-bootstrap.sh -o /tmp/boot.sh && chmod +x /tmp/boot.sh && /tmp/boot.sh -y
+curl -fsSL https://raw.githubusercontent.com/TomLighter/bypass-mdm/main/bypass-bootstrap.sh -o /tmp/boot.sh && /bin/bash /tmp/boot.sh -y
 ```
 
 The script will find your disk, download and verify the cleanup script, run it, then reboot. No need to type volume names—it discovers them.

@@ -1,6 +1,16 @@
-#!/usr/bin/env zsh
+#!/bin/bash
 set -euo pipefail
-setopt null_glob
+shopt -s nullglob
+
+# Compatibility helper so existing print calls work in bash.
+print() {
+  if [[ "${1:-}" == "-u2" ]]; then
+    shift
+    printf '%s\n' "$*" >&2
+  else
+    printf '%s\n' "$*"
+  fi
+}
 
 if [[ $EUID -ne 0 ]]; then
   print -u2 "[!] Run in Recovery as root."
