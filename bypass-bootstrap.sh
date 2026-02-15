@@ -161,13 +161,16 @@ compute_git_blob_sha() {
     warn "Unable to determine file size for $file."
     return 1
   fi
-  if command -v openssl >/dev/null 2>&1 && command -v xxd >/dev/null 2>&1; then
-    printf "blob %s\0" "$size" | cat - "$file" | openssl sha1 -binary | xxd -p -c 256
+  if command -v openssl >/dev/null 2>&1; then
+    # Recovery shells may have openssl but not xxd/shasum.
+    printf "blob %s\0" "$size" | cat - "$file" | openssl sha1 2>/dev/null | awk '{print $NF}'
   elif command -v shasum >/dev/null 2>&1; then
     # Keep GitHub API blob SHA comparison valid even without openssl/xxd.
     printf "blob %s\0" "$size" | cat - "$file" | shasum -a 1 | awk '{print $1}'
+  elif command -v sha1sum >/dev/null 2>&1; then
+    printf "blob %s\0" "$size" | cat - "$file" | sha1sum | awk '{print $1}'
   else
-    warn "No hashing tool available (openssl/xxd or shasum)."
+    warn "No hashing tool available (openssl/shasum/sha1sum)."
     return 1
   fi
 }
