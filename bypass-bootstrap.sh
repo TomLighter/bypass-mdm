@@ -5,49 +5,133 @@ setopt null_glob
 log()  { print "[*] $1"; }
 warn() { print -u2 "[!] $1"; }
 
+# Non-interactive: skip "Run now?" prompt and execute recovery script after SHA verify
+AUTO_YES=false
+for arg in "${@}"; do
+  case "$arg" in
+    -y|--yes) AUTO_YES=true; break ;;
+  esac
+done
+
 GITHUB_USER=${GITHUB_USER:-TomLighter}
 GITHUB_REPO=${GITHUB_REPO:-bypass-mdm}
 FILE_PATH=${FILE_PATH:-bypass-mdm-cleanup-recovery.sh}
 RAW_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/${FILE_PATH}"
 API_URL="https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${FILE_PATH}"
 
-log "Searching for macOS system volumes under /Volumes..."
-typeset -a volumes
+log "Searching for macOS system and data volumes under /Volumes..."
+typeset -a sys_volumes
+typeset -a data_volumes
 for volume in /Volumes/*; do
-  [[ -d "$volume/System/Library/CoreServices" ]] && volumes+=("${volume:t}")
+  [[ -d "$volume/System/Library/CoreServices" ]] && sys_volumes+=("${volume:t}")
+  # Data volume: has private/var/db (firmlink layout) or var/db, or name is "Data" or ends with " - Data"
+  if [[ -d "$volume/private/var/db" ]] || [[ -d "$volume/var/db" ]]; then
+    data_volumes+=("${volume:t}")
+  elif [[ "${volume:t}" == "Data" ]] || [[ "${volume:t}" == *" - Data" ]]; then
+    data_volumes+=("${volume:t}")
+  fi
 done
 
-if (( ${#volumes} == 0 )); then
-  warn "No macOS-looking volume found under /Volumes."
-  warn "Mount your Data/System volume first, e.g.:  diskutil mount \"Macintosh HD\""
+# Prefer system volume for "which volume to use"; in -y mode never prompt
+SYS_VOL=""
+DATA_VOL=""
+if (( ${#sys_volumes} == 0 )); then
+  log "No macOS system volume found. Discovering and mounting APFS volumes..."
+  # First try default names
+  for try in "Macintosh HD" "Macintosh HD - Data" "Data"; do
+    diskutil mount "$try" 2>/dev/null || true
+  done
+  # Discover all APFS volume names from diskutil (handles custom names like "My SSD" / "My SSD - Data")
+  # Output format: "   Name:                Macintosh HD - Data" or "Name: My SSD (Case-sensitive)"
+  typeset -a apfs_names
+  apfs_names=("${(f)$(diskutil apfs list 2>/dev/null | sed -n 's/^[[:space:]]*Name:[[:space:]]*\(.*\)/\1/p' | sed 's/[[:space:]]*(Case-sensitive).*//' | sed 's/[[:space:]]*(Case-insensitive).*//' | sed 's/[[:space:]]*$//')}")
+  for name in "${apfs_names[@]}"; do
+    [[ -z "$name" ]] && continue
+    case "${(L)name}" in
+      preboot|recovery|vm|update) continue ;;
+      *) diskutil mount "$name" 2>/dev/null || true ;;
+    esac
+  done
+  sys_volumes=()
+  data_volumes=()
+  for volume in /Volumes/*; do
+    [[ -d "$volume/System/Library/CoreServices" ]] && sys_volumes+=("${volume:t}")
+    if [[ -d "$volume/private/var/db" ]] || [[ -d "$volume/var/db" ]]; then
+      data_volumes+=("${volume:t}")
+    elif [[ "${volume:t}" == "Data" ]] || [[ "${volume:t}" == *" - Data" ]]; then
+      data_volumes+=("${volume:t}")
+    fi
+  done
+fi
+if (( ${#sys_volumes} == 0 )); then
+  warn "No macOS system volume found under /Volumes."
+  warn "Mount your System and Data volumes first, e.g.:  diskutil mount \"Macintosh HD\" ; diskutil mount \"Macintosh HD - Data\""
+  warn "On Apple Silicon the Data volume is often named \"Data\". Use: diskutil apfs list  to see your volume names."
   exit 1
 fi
 
-if (( ${#volumes} == 1 )); then
-  SYS_VOL=${volumes[1]}
-  log "Detected: $SYS_VOL"
+if (( ${#sys_volumes} == 1 )); then
+  SYS_VOL=${sys_volumes[1]}
+  log "Detected system volume: $SYS_VOL"
 else
-  log "Multiple candidates:"
-  integer idx=1
-  for vol in "${volumes[@]}"; do
-    print "  $idx) $vol"
-    (( idx++ ))
-  done
-  printf 'Select volume number: '
-  read -r selection
-  if ! [[ $selection =~ ^[0-9]+$ ]] || (( selection < 1 || selection > ${#volumes} )); then
-    warn "Invalid selection."
-    exit 1
+  if $AUTO_YES; then
+    # Non-interactive: pick first system volume that has a matching Data volume, else first
+    SYS_VOL=""
+    for vol in "${sys_volumes[@]}"; do
+      for d in "${data_volumes[@]}"; do
+        if [[ "$d" == "Data" ]] || [[ "$d" == "${vol} - Data" ]]; then
+          SYS_VOL="$vol"
+          break 2
+        fi
+      done
+    done
+    [[ -z $SYS_VOL ]] && SYS_VOL=${sys_volumes[1]}
+    log "Multiple system volumes; auto-selected: $SYS_VOL"
+  else
+    log "Multiple system candidates:"
+    integer idx=1
+    for vol in "${sys_volumes[@]}"; do
+      print "  $idx) $vol"
+      (( idx++ ))
+    done
+    printf 'Select volume number: '
+    read -r selection
+    if ! [[ $selection =~ ^[0-9]+$ ]] || (( selection < 1 || selection > ${#sys_volumes} )); then
+      warn "Invalid selection."
+      exit 1
+    fi
+    SYS_VOL=${sys_volumes[selection]}
+    log "Chosen system volume: $SYS_VOL"
   fi
-  SYS_VOL=${volumes[selection]}
-  log "Chosen: $SYS_VOL"
 fi
 
-DEST="/Volumes/${SYS_VOL}/Users/Shared"
+# Resolve data volume: explicit match for this system (e.g. "Macintosh HD" -> "Macintosh HD - Data" or "Data")
+if (( ${#data_volumes} > 0 )); then
+  for d in "${data_volumes[@]}"; do
+    if [[ "$d" == "Data" ]] || [[ "$d" == "${SYS_VOL} - Data" ]]; then
+      DATA_VOL="$d"
+      break
+    fi
+  done
+  [[ -z $DATA_VOL ]] && DATA_VOL=${data_volumes[1]}
+fi
+if [[ -z $DATA_VOL ]]; then
+  # Legacy single volume or only system mounted: use system for both
+  DATA_VOL="$SYS_VOL"
+  log "Using single volume for both data and system: $SYS_VOL"
+else
+  log "Data volume: $DATA_VOL"
+fi
+
+# Writable destination: prefer Data volume's Users/Shared (Users is on Data), then system's, then /tmp
+DEST="/Volumes/${DATA_VOL}/Users/Shared"
 if ! mkdir -p "$DEST" 2>/dev/null; then
-  warn "Could not create ${DEST}; using /tmp instead."
-  DEST="/tmp"
-  mkdir -p "$DEST"
+  DEST="/Volumes/${SYS_VOL}/Users/Shared"
+  if ! mkdir -p "$DEST" 2>/dev/null; then
+    warn "Could not create ${DEST}; using /tmp instead."
+    DEST="/tmp"
+    mkdir -p "$DEST"
+  fi
 fi
 
 cd "$DEST"
@@ -107,11 +191,16 @@ fi
 
 print
 log "SHA verified."
-printf 'Run the recovery script now? (y/N): '
-read -r answer
-if [[ $answer == [yY] ]]; then
-  log "Executing ${DEST}/${FILE_PATH} ..."
-  /bin/zsh "${DEST}/${FILE_PATH}"
+if $AUTO_YES; then
+  log "Executing ${DEST}/${FILE_PATH} with Data=$DATA_VOL System=$SYS_VOL ..."
+  /bin/zsh "${DEST}/${FILE_PATH}" "$DATA_VOL" "$SYS_VOL"
 else
-  log "Saved to ${DEST}/${FILE_PATH}. Run manually when ready."
+  printf 'Run the recovery script now? (y/N): '
+  read -r answer
+  if [[ $answer == [yY] ]]; then
+    log "Executing ${DEST}/${FILE_PATH} with Data=$DATA_VOL System=$SYS_VOL ..."
+    /bin/zsh "${DEST}/${FILE_PATH}" "$DATA_VOL" "$SYS_VOL"
+  else
+    log "Saved to ${DEST}/${FILE_PATH}. Run manually when ready (e.g. ${DEST}/${FILE_PATH} \"$DATA_VOL\" \"$SYS_VOL\")."
+  fi
 fi

@@ -2,6 +2,8 @@
 set -euo pipefail
 setopt null_glob
 
+# Best-effort MDM cleanup from normal macOS (including Tahoe 26.x). For persistent UI hide, run bypass-mdm-cleanup-recovery.sh from Recovery.
+
 if [[ $EUID -ne 0 ]]; then
   print -u2 "[!] Run as root (e.g. sudo $0)."
   exit 1
@@ -17,6 +19,7 @@ if [[ ! -d $STORE_DIR ]]; then
   mkdir -p "$STORE_DIR"
 fi
 
+# Best-effort below: intentional || true so one failure does not abort the script
 # Stop MDM/UI helpers that may repopulate the store immediately
 killall mdmclient 2>/dev/null || true
 killall "Setup Assistant" 2>/dev/null || true
