@@ -3,6 +3,8 @@
 Use only on devices you own or have permission to modify.  
 Local MDM cleanup: removes enrollment prompts and hides the Device Management UI. Backup first; use at your own risk.
 
+**Quick link (for Recovery browser):** [github.com/TomLighter/bypass-mdm](https://github.com/TomLighter/bypass-mdm) — or create a short URL (e.g. [bit.ly](https://bit.ly), [t.ly](https://t.ly)) pointing here and bookmark it so you can open the repo fast in Recovery.
+
 ---
 
 ## For most users: run from Recovery (recommended)
