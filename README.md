@@ -1,7 +1,7 @@
 # bypass-mdm
 
-## MDM bypass and cleanup 
-## Use only on devices you own or have permission to modify.
+## MDM bypass and cleanup for security check
+This is a project for leadning about OS security.
 
 ## Files
 

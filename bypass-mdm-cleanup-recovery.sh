@@ -84,13 +84,17 @@ if [[ -x $BLESS_BIN ]]; then
   # Script continues on bless failure so user can see stderr and fix (e.g. authenticated-root)
   case "$(uname -m)" in
     arm64)
-      if ! "$BLESS_BIN" --mount "$SYS_TARGET" --setBoot --create-snapshot; then
-        print -u2 "[!] bless --setBoot --create-snapshot failed (exit $?). Ensure authenticated-root is disabled."
+      "$BLESS_BIN" --mount "$SYS_TARGET" --setBoot --create-snapshot
+      bless_ret=$?
+      if (( bless_ret != 0 )); then
+        print -u2 "[!] bless --setBoot --create-snapshot failed (exit $bless_ret). Ensure authenticated-root is disabled."
       fi
       ;;
     *)
-      if ! "$BLESS_BIN" --mount "$SYS_TARGET" --bootefi --create-snapshot; then
-        print -u2 "[!] bless --bootefi --create-snapshot failed (exit $?). See stderr above for details."
+      "$BLESS_BIN" --mount "$SYS_TARGET" --bootefi --create-snapshot
+      bless_ret=$?
+      if (( bless_ret != 0 )); then
+        print -u2 "[!] bless --bootefi --create-snapshot failed (exit $bless_ret). See stderr above for details."
       fi
       ;;
   esac
