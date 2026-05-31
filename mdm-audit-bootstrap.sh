@@ -8,7 +8,7 @@ shopt -s nullglob
 
 GITHUB_USER=${GITHUB_USER:-TomLighter}
 GITHUB_REPO=${GITHUB_REPO:-bypass-mdm}
-BRANCH=${BRANCH:-main}
+BRANCH=${BRANCH:-v0.1-audit}
 AUDIT_SCRIPT=${AUDIT_SCRIPT:-mdm-audit.sh}
 AUDIT_SHA256=${AUDIT_SHA256:-d8499303840df6fcbf0954f53aa5b5ddcf93cfab8f0301ecd2d926fbdfe4370f}
 RAW_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${BRANCH}/${AUDIT_SCRIPT}"
@@ -29,7 +29,7 @@ Options passed through to mdm-audit.sh:
 Environment overrides:
   DEST=/path              Save downloaded script and reports under this path
   REPORT_DIR=/path        Save reports under this path
-  BRANCH=name             Git branch to download from, default: main
+  BRANCH=name             Git branch or tag to download from, default: v0.1-audit
   AUDIT_SHA256=hex        Expected SHA-256 for mdm-audit.sh
   AUDIT_SHA256=skip       Skip SHA-256 verification, not recommended
 EOF

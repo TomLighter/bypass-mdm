@@ -1,0 +1,2 @@
+d8499303840df6fcbf0954f53aa5b5ddcf93cfab8f0301ecd2d926fbdfe4370f  mdm-audit.sh
+49145d8cf3b26d4e6117f738e1877fee097d1cea2bb50c1dbc2124cbed69780e  mdm-audit-bootstrap.sh
