@@ -1,1 +1,13 @@
+# macOS Finder metadata
+.DS_Store
+
+# Generated audit output
+reports/
+*.ansi.tmp
+
+# Local/agent configuration
+.claude/
+.openclaude-profile.json
+
+# Local review notes
 REVIEW-principal-engineer.md

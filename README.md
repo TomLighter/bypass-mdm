@@ -1,103 +1,89 @@
-# bypass-mdm
+# macOS MDM Student Security Project
 
-Use only on devices you own or have permission to modify.  
-Local MDM cleanup: removes enrollment prompts and hides the Device Management UI. Backup first; use at your own risk.
+This repository is being used for a white-hat student project focused on macOS MDM security posture, detection, and hardening.
 
-**Quick link (for Recovery browser):** [github.com/TomLighter/bypass-mdm](https://github.com/TomLighter/bypass-mdm) — or create a short URL (e.g. [bit.ly](https://bit.ly), [t.ly](https://t.ly)) pointing here and bookmark it so you can open the repo fast in Recovery.
+> Use only on devices you own or are explicitly authorized to assess.
 
----
+## Read-only audit tool
 
-## For most users: run from Recovery (recommended)
+`mdm-audit.sh` performs a read-only audit. It does **not** modify files, services, profiles, launchd state, or system settings.
 
-Do this if you want the cleanup to stick. You’ll boot into Recovery, do three one-time steps, then paste one command.
+### What it checks
 
-### Step 1 — Boot into Recovery
+- macOS version and hardware overview
+- MDM / DEP enrollment status
+- Installed configuration profiles
+- FileVault status
+- SIP and authenticated-root status
+- Configuration profile store presence, flags, and permissions
+- Setup Assistant marker files
+- Profiles preference pane presence
+- MDM-related `/etc/hosts` overrides
+- Disabled MDM / ManagedClient launchd entries
+- Optional recent MDM-related unified logs
 
-- **Apple Silicon:** Hold Power, tap **Options**, choose **Recovery**.
-- **Intel:** Restart and hold **⌘ + R** until you see the Apple logo.
-
-### Step 2 — Connect Wi‑Fi and disable authenticated root (one time)
-
-1. In Recovery, connect to Wi‑Fi (menu bar or **Utilities**).
-2. Open **Utilities → Terminal**.
-3. Run:
-   ```bash
-   csrutil authenticated-root disable
-   reboot
-   ```
-4. After the Mac restarts, boot into Recovery again (Step 1).
-
-### Step 3 — Paste this in Recovery Terminal
-
-Open **Utilities → Terminal** in Recovery, then paste this and press Enter:
+### Run the audit
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TomLighter/bypass-mdm/main/bypass-bootstrap.sh -o /tmp/boot.sh && /bin/bash /tmp/boot.sh -y
+./mdm-audit.sh
 ```
 
-The script will find your disk, download and verify the cleanup script, run it, then reboot. No need to type volume names—it discovers them.
+Reports are automatically saved under:
 
-**If FileVault is on,** you may be asked for your disk password when it mounts.  
-**If you have several macOS disks,** it uses the first one; to pick another, run without `-y` and choose when prompted.
+```text
+reports/mdm-audit-YYYY-mm-dd-HHMMSS.txt
+reports/mdm-audit-YYYY-mm-dd-HHMMSS.md
+```
 
----
+The terminal output may use color, but saved `.txt` and `.md` reports are plain text without ANSI color codes.
 
-## Revert (undo the changes)
-
-Boot into Recovery, open Terminal, mount your volumes if needed, then run (replace volume names if yours differ—e.g. `Data` instead of `Macintosh HD - Data` on Apple Silicon):
+### Collect recent MDM-related logs
 
 ```bash
-chflags noschg,nodatavault "/Volumes/Macintosh HD - Data/private/var/db/ConfigurationProfiles/Store"
-chmod 755 "/Volumes/Macintosh HD - Data/private/var/db/ConfigurationProfiles/Store"
-mv "/Volumes/Macintosh HD/System/Library/PreferencePanes/Profiles.prefPane.bak" "/Volumes/Macintosh HD/System/Library/PreferencePanes/Profiles.prefPane"
-"/Volumes/Macintosh HD/usr/sbin/bless" --mount "/Volumes/Macintosh HD" --setBoot --create-snapshot
-reboot
+./mdm-audit.sh --collect-logs
 ```
 
-On Intel, use `--bootefi` instead of `--setBoot` in the bless command.
+This saves a log file next to the main `.txt` and `.md` reports:
 
----
+```text
+reports/mdm-audit-YYYY-mm-dd-HHMMSS.logs.txt
+```
 
-## Optional: run from normal macOS (weaker, may not persist)
+The log collection is read-only and uses `log show` predicates for `mdmclient`, `ManagedClient`, `MDM`, and `ConfigurationProfiles` events.
 
-Only use this if you can’t use Recovery. Changes may be reverted by updates.
+### Help
 
 ```bash
-chmod +x bypass-mdm-cleanup.sh
-sudo ./bypass-mdm-cleanup.sh
+./mdm-audit.sh --help
 ```
 
-Reboot and check: `profiles status -type enrollment`. For a lasting fix, use the Recovery steps above.
+## Interpreting common findings
 
----
+- **SIP disabled**: high-risk local tampering exposure. Re-enable before production use.
+- **Authenticated root disabled**: high-risk system-volume integrity exposure. Re-enable before production use.
+- **MDM launchd jobs disabled**: investigate whether MDM services were intentionally or unexpectedly disabled.
+- **Profile store locked or unusual flags**: compare against a clean baseline and investigate tampering.
+- **MDM enrollment host overrides**: remove unauthorized `/etc/hosts` entries that block Apple enrollment services.
 
-## Warnings
+## Hardening checklist
 
-- Backup first (e.g. Time Machine).
-- Only on devices you own or are allowed to modify.
-- Scripts modify system areas and set immutable flags; major updates can undo changes.
-- This does **not** remove server-side DEP/MDM; only local cleanup.
+- Keep SIP enabled.
+- Keep authenticated root enabled.
+- Require FileVault.
+- Restrict local administrator rights.
+- Monitor MDM enrollment state and profile changes.
+- Alert on changes under `/var/db/ConfigurationProfiles`.
+- Alert on MDM-related `/etc/hosts` entries.
+- Alert when MDM / ManagedClient launchd jobs are disabled.
+- Use Automated Device Enrollment where appropriate.
+- Maintain a known-good baseline report for comparison.
 
----
+## Files
 
-## Files in this repo
+- `mdm-audit.sh` — read-only audit and optional log collection tool.
+- `reports/` — generated audit reports and optional log collections. Ignored by Git.
+- Legacy scripts may exist in the repository for historical coursework context; do not use them on systems without explicit authorization.
 
-- **bypass-bootstrap.sh** — Fetches and runs the recovery script (used by the one-liner above).
-- **bypass-mdm-cleanup-recovery.sh** — Recovery script: cleans MDM data, hides Profiles UI, creates snapshot.
-- **bypass-mdm-cleanup.sh** — In-system best-effort cleanup (optional; Recovery is preferred).
+## Ethics and scope
 
----
-
-## FAQ
-
-**Q:** Does this remove server-side DEP/MDM?  
-**A:** No. Only local cleanup. Server records stay until the org or Apple removes them.
-
-**Q:** Will updates re-enable the UI?  
-**A:** Sometimes. Re-check after major macOS updates.
-
-**Q:** Safe?  
-**A:** Scripts change system files. Back up first; you can revert from Recovery (see Revert above).
-
-**Q:** Legal?  
-**A:** Yes if you own the device or have permission. Otherwise check your policy and law.
+This project should be framed around defensive validation: identifying weak local controls, detecting tampering indicators, and recommending administrative hardening steps. Do not run tests against third-party or production systems without written permission.
