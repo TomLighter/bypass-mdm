@@ -24,8 +24,24 @@ This repository is being used for a white-hat student project focused on macOS M
 
 ### Run the audit
 
+From a cloned copy of this repository:
+
 ```bash
 ./mdm-audit.sh
+```
+
+Or paste this one-liner into Terminal to download and run the read-only audit bootstrapper:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TomLighter/bypass-mdm/main/mdm-audit-bootstrap.sh -o /tmp/mdm-audit-bootstrap.sh && /bin/bash /tmp/mdm-audit-bootstrap.sh
+```
+
+The bootstrapper saves reports to a mounted `/Volumes/*/Users/Shared` location when available, which is useful from Recovery Terminal. It verifies the downloaded audit script with SHA-256 before execution.
+
+To include recent MDM-related logs:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TomLighter/bypass-mdm/main/mdm-audit-bootstrap.sh -o /tmp/mdm-audit-bootstrap.sh && /bin/bash /tmp/mdm-audit-bootstrap.sh --collect-logs
 ```
 
 Reports are automatically saved under:
@@ -81,6 +97,7 @@ The log collection is read-only and uses `log show` predicates for `mdmclient`, 
 ## Files
 
 - `mdm-audit.sh` — read-only audit and optional log collection tool.
+- `mdm-audit-bootstrap.sh` — convenience downloader/runner for `mdm-audit.sh`; verifies the downloaded script with SHA-256 before execution.
 - `reports/` — generated audit reports and optional log collections. Ignored by Git.
 - Legacy scripts may exist in the repository for historical coursework context; do not use them on systems without explicit authorization.
 
